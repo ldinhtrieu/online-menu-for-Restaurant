@@ -1,0 +1,27 @@
+tags: [order]
+cases:
+  - id: ORD-001
+    title: API - empty cart is rejected
+    priority: P1
+    steps:
+      - api: { method: POST, url: /api/orders, body: { items: [] }, expectStatus: 400, expectJson: { error: "empty cart" } }
+  - id: ORD-002
+    title: API+Web - create order then read it back
+    priority: P0
+    steps:
+      - api: { method: POST, url: /api/orders, body: { items: [Pho] }, expectStatus: 201, expectJson: { status: NEW }, save: { orderId: id } }
+      - api: { url: "/api/orders/${orderId}", expectJson: { items: ["Pho"], status: NEW } }
+  - id: ORD-003
+    title: Web checkout shows order confirmation
+    priority: P0
+    steps:
+      - goto: /
+      - click: ".add[data-n='Banh mi']"
+      - click: "#checkout"
+      - expectText: { selector: "#msg", contains: "placed" }
+  - id: ORD-004
+    title: Deliberately failing case (demo of report)
+    priority: P2
+    tags: [demo-fail]
+    steps:
+      - api: { url: /api/orders/9999, expectStatus: 200 }

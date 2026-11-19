@@ -1,0 +1,19 @@
+tags: [cart]
+cases:
+  - id: CART-001
+    title: Add item updates cart count
+    priority: P0
+    tags: [smoke]
+    steps:
+      - goto: /
+      - click: ".add[data-n='Pho']"
+      - expectText: { selector: "#count", equals: "1" }
+      - expectText: { selector: "#cart", contains: "Pho" }
+  - id: CART-002
+    title: Add two items shows two lines
+    priority: P1
+    steps:
+      - goto: /
+      - click: ".add[data-n='Pho']"
+      - click: ".add[data-n='Banh mi']"
+      - expectCount: { selector: "#cart li", count: 2 }

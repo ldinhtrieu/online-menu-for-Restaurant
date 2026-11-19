@@ -1,0 +1,12 @@
+name: demo-menu
+baseUrl: http://localhost:4010
+retries: 1
+workers: 2
+screenshots: failure
+alwaysRun: { tags: [smoke] }
+onUnmapped: all
+impact:
+  - paths: ["regtest/examples/demo/app/**"]
+    tags: [cart, order]
+  - paths: ["docs/**", "**/*.md"]
+    tags: []            # known to be irrelevant -> maps to nothing, but counts as "mapped"
