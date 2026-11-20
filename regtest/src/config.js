@@ -20,6 +20,12 @@ const DEFAULTS = {
   alwaysRun: { tags: ['smoke'], priorities: [] },
   onUnmapped: 'all',           // all | ignore  (changed files that match no impact rule)
   impact: [],                  // [{ paths: [glob], tags: [tag] }]
+  draftsDir: 'drafts',         // AI-generated cases wait here until a human runs "regtest approve"
+  ai: {                        // Claude CLI in headless mode; uses your "claude login", no API key
+    provider: 'claude-cli', command: 'claude', model: 'sonnet',
+    models: { gen: 'sonnet', explain: 'haiku' },   // cheaper model for small tasks
+    maxCalls: 5, timeoutMs: 180000,
+  },
 };
 
 function loadConfig(projectDir) {
@@ -30,8 +36,10 @@ function loadConfig(projectDir) {
   const raw = YAML.parse(fs.readFileSync(file, 'utf8')) || {};
   const cfg = { ...DEFAULTS, ...raw,
     browser: { ...DEFAULTS.browser, ...(raw.browser || {}) },
-    alwaysRun: { ...DEFAULTS.alwaysRun, ...(raw.alwaysRun || {}) } };
+    alwaysRun: { ...DEFAULTS.alwaysRun, ...(raw.alwaysRun || {}) },
+    ai: { ...DEFAULTS.ai, ...(raw.ai || {}), models: { ...DEFAULTS.ai.models, ...((raw.ai || {}).models || {}) } } };
   cfg.root = root;
+  if (process.env.REGTEST_CLAUDE) cfg.ai.command = process.env.REGTEST_CLAUDE;
   cfg.apiBaseUrl = cfg.apiBaseUrl || cfg.baseUrl;
   cfg.browser.executablePath = process.env.REGTEST_CHROMIUM || cfg.browser.executablePath || undefined;
   // env overrides so CI can point the same suite at any environment

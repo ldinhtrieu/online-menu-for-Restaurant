@@ -1,6 +1,6 @@
 # regtest — runner regression dùng chung cho nhiều dự án
 
-Mô tả test case bằng YAML (web + API), **chọn case cần chạy theo phần code đã thay đổi**, chạy song song, retry, báo cáo HTML có ảnh chụp khi lỗi. Chưa có AI (sẽ thêm sau: sinh case, tự sửa selector, giải thích lỗi).
+Mô tả test case bằng YAML (web + API), **chọn case cần chạy theo phần code đã thay đổi**, chạy song song, retry, báo cáo HTML có ảnh chụp khi lỗi. AI dùng **Claude CLI** (`claude -p`), đăng nhập bằng tài khoản của bạn, **không cần API key**: sinh case từ ticket/diff, phân tích lỗi. (Tự sửa selector: chưa làm.)
 
 ## Dùng nhanh
 ```bash
@@ -23,6 +23,25 @@ Trình duyệt: Playwright. Nếu máy đã có Chromium sẵn, đặt `REGTEST_
 Chọn case (hợp của các điều kiện): `--all`, `--changed [base]`, `--files a,b`, `--tags`, `--priority`, `--ids`.
 Khác: `--workers`, `--retries`, `--screenshots all|failure|none`, `--headed`, `--project`.
 Exit code: 0 pass hết, 1 có fail, 2 lỗi cấu hình.
+
+## AI qua Claude CLI
+Yêu cầu: đã cài Claude Code và `claude login`. Trên CI/server không đăng nhập tay được thì dùng `claude setup-token`.
+```bash
+regtest gen --from ticket.md --name my-feature     # hoặc --text "mô tả" hoặc --diff origin/main
+# -> drafts/my-feature.yaml  (KHÔNG chạy ngay; người đọc/sửa trước)
+regtest approve drafts/my-feature.yaml             # kiểm tra lại rồi chuyển vào cases/
+regtest run --changed origin/main --explain        # chạy regression, rồi phân loại lỗi
+regtest explain                                    # phân loại lỗi của lần chạy gần nhất
+```
+- `gen`: AI chỉ được dùng đúng các action của runner; output được validate, sai thì tự yêu cầu sửa 1 lần. Chỗ AI đoán selector/endpoint được ghi chú `# ASSUMPTION` để người duyệt kiểm tra.
+- `explain`: luật đơn giản xử lý trước (app không lên, 5xx) không tốn AI; các lỗi còn lại gộp **một** lần gọi. Có cache theo nội dung.
+- Tiết kiệm: `ai.models` dùng model nhỏ cho `explain`, model mạnh cho `gen`; `ai.maxCalls` đặt trần số lần gọi; mỗi lệnh in tổng token và số lần gọi.
+- Ví dụ: `examples/demo/ticket-DEMO-12.md`.
+- Lưu ý: giải thích của AI chỉ là gợi ý (có thể sai, ví dụ đoán nhầm lỗi do case viết sai là flaky). Case AI viết cần người duyệt trước khi tin kết quả.
+
+```yaml
+ai: { provider: claude-cli, command: claude, models: { gen: sonnet, explain: haiku }, maxCalls: 5 }
+```
 
 ## Chọn regression theo impact
 `regtest.config.yaml`:
@@ -64,4 +83,4 @@ Biến: `${name}` (từ `vars`/`save`), `${env.NAME}`. `teardown` luôn chạy, 
 - Mỗi case dùng browser context riêng (không dính cookie/state nhau). Case lỗi được retry; pass ở lần retry sẽ gắn **FLAKY**.
 - Báo cáo đánh dấu **REGRESSION** nếu case pass ở lần chạy trước nhưng fail lần này.
 - Cùng một bộ case chạy được trên môi trường khác bằng `REGTEST_BASE_URL` / `REGTEST_API_URL`.
-- Chưa có bước DB (dựng data / verify bằng SQL), mobile app, và AI. Cấu trúc `steps.js` cho phép thêm action mới ở một chỗ.
+- Chưa có bước DB (dựng data / verify bằng SQL), mobile app, và AI tự sửa selector. Cấu trúc `steps.js` cho phép thêm action mới ở một chỗ.

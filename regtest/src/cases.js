@@ -16,17 +16,26 @@ function loadCases(cfg) {
     let doc;
     try { doc = YAML.parse(fs.readFileSync(file, 'utf8')); }
     catch (e) { errors.push(`${rel(cfg, file)}: ${e.message}`); continue; }
-    const list = Array.isArray(doc) ? doc : doc && doc.cases ? doc.cases : doc ? [doc] : [];
-    const fileDefaults = doc && !Array.isArray(doc) && doc.cases ? { tags: doc.tags, priority: doc.priority, covers: doc.covers } : {};
-    for (const c of list) {
-      const norm = normalize(c, fileDefaults, rel(cfg, file));
-      const errs = validate(norm);
-      if (errs.length) errors.push(`${norm.file} [${norm.id || '?'}]: ${errs.join('; ')}`);
-      else cases.push(norm);
-    }
+    const r = fromDoc(doc, rel(cfg, file));
+    cases.push(...r.cases);
+    errors.push(...r.errors);
   }
   const seen = new Set();
   for (const c of cases) { if (seen.has(c.id)) errors.push(`Duplicate case id ${c.id}`); seen.add(c.id); }
+  return { cases, errors };
+}
+/** Turn a parsed YAML doc into validated, normalized cases (also used to check AI output). */
+function fromDoc(doc, file) {
+  const cases = [];
+  const errors = [];
+  const list = Array.isArray(doc) ? doc : doc && doc.cases ? doc.cases : doc ? [doc] : [];
+  const d = doc && !Array.isArray(doc) && doc.cases ? { tags: doc.tags, priority: doc.priority, covers: doc.covers } : {};
+  for (const c of list) {
+    const norm = normalize(c || {}, d, file);
+    const errs = validate(norm);
+    if (errs.length) errors.push(`${file} [${norm.id || '?'}]: ${errs.join('; ')}`);
+    else cases.push(norm);
+  }
   return { cases, errors };
 }
 const rel = (cfg, f) => path.relative(cfg.root, f).split(path.sep).join('/');
@@ -51,4 +60,4 @@ function validate(c) {
   }
   return e;
 }
-module.exports = { loadCases };
+module.exports = { loadCases, fromDoc, ACTIONS };

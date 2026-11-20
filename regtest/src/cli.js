@@ -6,6 +6,8 @@ const { loadCases } = require('./cases');
 const { select, gitChangedFiles } = require('./select');
 const { runAll } = require('./runner');
 const { writeReports } = require('./report');
+const { gen, approve, explain } = require('./ai-tasks');
+const { execFileSync } = require('child_process');
 
 const HELP = `regtest - shared regression runner
 
@@ -14,6 +16,9 @@ Usage: regtest <command> [options]
   list              list all cases
   select            show which cases would run (and why), without running
   run               run selected cases, write report to <outDir>/runs/<ts>/report.html
+  gen               AI (Claude CLI) drafts cases from a ticket/diff into <draftsDir>/ for review
+  approve <draft>   validate a draft and move it into cases/
+  explain           triage failures of the last run (rules first, AI only for what is left)
 
 Selection (combine freely; results are a union):
   --all                    every case
@@ -22,6 +27,9 @@ Selection (combine freely; results are a union):
   --tags t1,t2             cases having any of these tags
   --priority P0,P1         cases with these priorities
   --ids TC-1,TC-2          explicit ids
+AI (uses the "claude" CLI you are logged into - no API key):
+  gen --from <file> | --text "<desc>" | --diff [base]   [--name <draft-name>]
+  run --explain            after a run, triage failures
 Other:
   --project <dir>          project dir containing regtest.config.yaml (default: cwd)
   --workers N  --retries N  --screenshots all|failure|none  --headed
@@ -34,8 +42,8 @@ function parse(argv) {
     const a = argv[i];
     if (!a.startsWith('--')) { o._.push(a); continue; }
     const k = a.slice(2); const nxt = argv[i + 1];
-    if (['all', 'headed', 'json', 'help'].includes(k)) o[k] = true;
-    else if (k === 'changed') { if (nxt && !nxt.startsWith('--')) { o.changed = nxt; i++; } else o.changed = true; }
+    if (['all', 'headed', 'json', 'help', 'explain'].includes(k)) o[k] = true;
+    else if (k === 'changed' || k === 'diff') { if (nxt && !nxt.startsWith('--')) { o[k] = nxt; i++; } else o[k] = true; }
     else { o[k] = nxt; i++; }
   }
   return o;
@@ -76,6 +84,16 @@ async function main(argv) {
     else for (const c of cases) console.log(`${c.id.padEnd(12)} ${c.priority}  [${c.tags.join(',')}]  ${c.title}${c.skip ? '  (skipped)' : ''}`);
     return 0;
   }
+  if (cmd === 'gen') return doGen(cfg, o);
+  if (cmd === 'approve') {
+    if (!o._[1]) { console.error('Usage: regtest approve <draft-file>'); return 2; }
+    const r = approve(cfg, o._[1]); console.log(`Approved ${r.count} case(s) -> ${path.relative(cfg.root, r.dest)}`); return 0;
+  }
+  if (cmd === 'explain') {
+    const last = path.resolve(cfg.root, cfg.outDir, 'last.json');
+    if (!fs.existsSync(last)) { console.error('No previous run. Run "regtest run" first.'); return 2; }
+    return doExplain(cfg, JSON.parse(fs.readFileSync(last, 'utf8')).runDir);
+  }
   if (cmd !== 'select' && cmd !== 'run') { console.error(`Unknown command ${cmd}\n\n${HELP}`); return 2; }
 
   const sel = buildSelection(cfg, cases, o);
@@ -105,12 +123,43 @@ async function main(argv) {
   results.sort((a, b) => a.id.localeCompare(b.id));
   const meta = { project: cfg.name, startedAt, baseUrl: cfg.baseUrl, mode: sel.mode };
   const data = writeReports(cfg, runDir, meta, results, previous);
-  fs.writeFileSync(lastFile, JSON.stringify({ meta, results: results.map(({ id, status }) => ({ id, status })) }));
+  fs.writeFileSync(lastFile, JSON.stringify({ meta, runDir, results: results.map(({ id, status }) => ({ id, status })) }));
   const s = data.summary; const reg = results.filter((r) => r.regression).map((r) => r.id);
   console.log(`\n${s.passed} passed, ${s.failed} failed, ${s.flaky} flaky of ${s.total} in ${(s.ms / 1000).toFixed(1)}s`);
   if (reg.length) console.log(`Regressions (passed last run, fail now): ${reg.join(', ')}`);
   console.log(`Report: ${path.join(runDir, 'report.html')}`);
+  if (o.explain && s.failed) await doExplain(cfg, runDir);
   return s.failed ? 1 : 0;
+}
+
+async function doGen(cfg, o) {
+  let text;
+  if (o.from) text = fs.readFileSync(path.resolve(o.from), 'utf8');
+  else if (o.text) text = o.text;
+  else if (o.diff) {
+    const base = o.diff === true ? 'HEAD' : o.diff;
+    text = execFileSync('git', ['diff', base], { cwd: cfg.root, encoding: 'utf8', maxBuffer: 20e6 });
+    if (text.length > 60000) text = text.slice(0, 60000) + '\n...(diff truncated)';
+  } else { console.error('Usage: regtest gen --from <file> | --text "<description>" | --diff [base]'); return 2; }
+  if (!text.trim()) { console.error('Input is empty.'); return 2; }
+  console.log('Asking Claude to draft cases...');
+  try {
+    const r = await gen(cfg, { text, name: o.name || (o.from ? path.basename(o.from, path.extname(o.from)) : 'generated') });
+    console.log(`Drafted ${r.count} case(s) -> ${path.relative(cfg.root, r.file)}\nReview/edit it, then: regtest approve ${path.relative(cfg.root, r.file)}`);
+    console.log(r.ai.summary());
+    return 0;
+  } catch (e) { console.error(e.message); if (e.ai) console.error(e.ai.summary()); return 1; }
+}
+
+async function doExplain(cfg, runDir) {
+  try {
+    const r = await explain(cfg, runDir);
+    if (!r.total) { console.log('No failures to explain.'); return 0; }
+    console.log(`\nFailure triage (${r.total}):`);
+    for (const x of r.results) console.log(`  ${x.id.padEnd(12)} [${x.kind}] (${x.source})  ${x.note}`);
+    console.log(r.ai.summary());
+    return 0;
+  } catch (e) { console.error('explain failed: ' + e.message); return 1; }
 }
 
 function init(dir) {
