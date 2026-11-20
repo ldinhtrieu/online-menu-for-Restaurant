@@ -3,8 +3,20 @@
   "version": "0.1.0",
   "description": "Shared regression test runner: declarative cases (web + API), impact-based selection, HTML report",
   "type": "commonjs",
-  "bin": { "regtest": "bin/regtest.js" },
-  "scripts": { "test": "node --test test/*.test.js" },
-  "engines": { "node": ">=18" },
-  "dependencies": { "playwright": "^1.50.0", "yaml": "^2.5.0" }
+  "bin": {
+    "regtest": "bin/regtest.js",
+    "regtest-mcp": "bin/regtest-mcp.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "playwright": "^1.50.0",
+    "yaml": "^2.5.0",
+    "zod": "^4.6.7"
+  }
 }

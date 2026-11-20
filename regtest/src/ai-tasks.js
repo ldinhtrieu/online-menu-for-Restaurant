@@ -130,4 +130,4 @@ Reply with ONLY a YAML list: - id: ..., kind: ..., note: <one or two sentences>.
   }
   return { results: out, ai, total: failed.length };
 }
-module.exports = { gen, approve, explain, triage };
+module.exports = { gen, approve, explain, triage, FORMAT_SPEC };

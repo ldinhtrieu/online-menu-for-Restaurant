@@ -1,6 +1,6 @@
 # regtest — runner regression dùng chung cho nhiều dự án
 
-Mô tả test case bằng YAML (web + API), **chọn case cần chạy theo phần code đã thay đổi**, chạy song song, retry, báo cáo HTML có ảnh chụp khi lỗi. AI dùng **Claude CLI** (`claude -p`), đăng nhập bằng tài khoản của bạn, **không cần API key**: sinh case từ ticket/diff, phân tích lỗi. (Tự sửa selector: chưa làm.)
+Mô tả test case bằng YAML (web + API), **chọn case cần chạy theo phần code đã thay đổi**, chạy song song, retry, báo cáo HTML có ảnh chụp khi lỗi. Có thể dùng làm **MCP server cho GitHub Copilot** (xem [docs/COPILOT-MCP.md](docs/COPILOT-MCP.md)): Copilot là AI, regtest là bộ công cụ, tool không tự gọi model nào. Tuỳ chọn: lệnh CLI `gen`/`explain` dùng Claude CLI (`ai.provider: claude-cli`, **tắt mặc định**).
 
 ## Dùng nhanh
 ```bash
@@ -24,8 +24,11 @@ Chọn case (hợp của các điều kiện): `--all`, `--changed [base]`, `--f
 Khác: `--workers`, `--retries`, `--screenshots all|failure|none`, `--headed`, `--project`.
 Exit code: 0 pass hết, 1 có fail, 2 lỗi cấu hình.
 
-## AI qua Claude CLI
-Yêu cầu: đã cài Claude Code và `claude login`. Trên CI/server không đăng nhập tay được thì dùng `claude setup-token`.
+## MCP (GitHub Copilot)
+`node bin/regtest-mcp.js --project <dir>` (hoặc `regtest mcp --project <dir>`) chạy server stdio với 19 tool và 3 prompt: chọn/chạy regression, đọc kết quả và ảnh lỗi, soạn/duyệt/sửa case, quản lý luật impact. Hướng dẫn cấu hình VS Code: [docs/COPILOT-MCP.md](docs/COPILOT-MCP.md).
+
+## AI qua Claude CLI (tuỳ chọn, tắt mặc định)
+Bật bằng `ai: { provider: claude-cli }` trong config. **Nếu công ty không cho dùng Claude, đừng bật** - dùng MCP với Copilot thay thế. Yêu cầu: đã cài Claude Code và `claude login`. Trên CI/server không đăng nhập tay được thì dùng `claude setup-token`.
 ```bash
 regtest gen --from ticket.md --name my-feature     # hoặc --text "mô tả" hoặc --diff origin/main
 # -> drafts/my-feature.yaml  (KHÔNG chạy ngay; người đọc/sửa trước)

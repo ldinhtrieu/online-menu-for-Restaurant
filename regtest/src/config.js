@@ -21,8 +21,8 @@ const DEFAULTS = {
   onUnmapped: 'all',           // all | ignore  (changed files that match no impact rule)
   impact: [],                  // [{ paths: [glob], tags: [tag] }]
   draftsDir: 'drafts',         // AI-generated cases wait here until a human runs "regtest approve"
-  ai: {                        // Claude CLI in headless mode; uses your "claude login", no API key
-    provider: 'claude-cli', command: 'claude', model: 'sonnet',
+  ai: {                        // provider: none (default, no AI is ever called) | claude-cli (headless claude -p, no API key)
+    provider: 'none', command: 'claude', model: 'sonnet',
     models: { gen: 'sonnet', explain: 'haiku' },   // cheaper model for small tasks
     maxCalls: 5, timeoutMs: 180000,
   },
@@ -40,11 +40,10 @@ function loadConfig(projectDir) {
     ai: { ...DEFAULTS.ai, ...(raw.ai || {}), models: { ...DEFAULTS.ai.models, ...((raw.ai || {}).models || {}) } } };
   cfg.root = root;
   if (process.env.REGTEST_CLAUDE) cfg.ai.command = process.env.REGTEST_CLAUDE;
-  cfg.apiBaseUrl = cfg.apiBaseUrl || cfg.baseUrl;
   cfg.browser.executablePath = process.env.REGTEST_CHROMIUM || cfg.browser.executablePath || undefined;
   // env overrides so CI can point the same suite at any environment
   if (process.env.REGTEST_BASE_URL) cfg.baseUrl = process.env.REGTEST_BASE_URL;
-  if (process.env.REGTEST_API_URL) cfg.apiBaseUrl = process.env.REGTEST_API_URL;
+  cfg.apiBaseUrl = process.env.REGTEST_API_URL || raw.apiBaseUrl || cfg.baseUrl;   // follows baseUrl unless set explicitly
   return cfg;
 }
 module.exports = { loadConfig, DEFAULTS };

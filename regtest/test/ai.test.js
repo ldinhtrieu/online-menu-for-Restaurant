@@ -34,7 +34,7 @@ test('AI wrapper: parses claude JSON, tracks usage, caches, honours call limit',
   fs.writeFileSync(fake, `#!/usr/bin/env node
 let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.stringify({result:'echo:'+s.trim(),total_cost_usd:0.01,usage:{input_tokens:10,output_tokens:5}})));`);
   fs.chmodSync(fake, 0o755);
-  const cfg = { root: dir, outDir: '.o', ai: { ...DEFAULTS.ai, command: fake, maxCalls: 2 } };
+  const cfg = { root: dir, outDir: '.o', ai: { ...DEFAULTS.ai, provider: 'claude-cli', command: fake, maxCalls: 2 } };
   const ai = new AI(cfg);
   assert.strictEqual(await ai.ask('explain', 'hi', { useCache: true }), 'echo:hi');
   assert.strictEqual(await ai.ask('explain', 'hi', { useCache: true }), 'echo:hi');   // cached
@@ -43,4 +43,9 @@ let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.stringif
   assert.strictEqual(ai.usage.inputTokens, 10);
   await ai.ask('gen', 'b');
   await assert.rejects(() => ai.ask('gen', 'c'), /call limit/);
+});
+
+test('AI is disabled by default', async () => {
+  const ai = new AI({ root: os.tmpdir(), outDir: '.o', ai: { ...DEFAULTS.ai } });
+  await assert.rejects(() => ai.ask('gen', 'x'), /AI is disabled/);
 });

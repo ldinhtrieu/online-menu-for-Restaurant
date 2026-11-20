@@ -3,9 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadConfig } = require('./config');
 const { loadCases } = require('./cases');
-const { select, gitChangedFiles } = require('./select');
-const { runAll } = require('./runner');
-const { writeReports } = require('./report');
+const { buildSelection: build, startRun } = require('./engine');
 const { gen, approve, explain } = require('./ai-tasks');
 const { execFileSync } = require('child_process');
 
@@ -15,6 +13,7 @@ Usage: regtest <command> [options]
   init [dir]        scaffold regtest.config.yaml + sample case
   list              list all cases
   select            show which cases would run (and why), without running
+  mcp               start the MCP server (stdio) for GitHub Copilot / other MCP clients
   run               run selected cases, write report to <outDir>/runs/<ts>/report.html
   gen               AI (Claude CLI) drafts cases from a ticket/diff into <draftsDir>/ for review
   approve <draft>   validate a draft and move it into cases/
@@ -50,26 +49,11 @@ function parse(argv) {
 }
 const csv = (v) => (v ? String(v).split(',').map((s) => s.trim()).filter(Boolean) : undefined);
 
-function buildSelection(cfg, cases, o) {
-  const opts = { all: !!o.all, ids: csv(o.ids), tags: csv(o.tags), priorities: csv(o.priority) };
-  if (o.files) opts.changed = csv(o.files);
-  else if (o.changed) {
-    const { files, top } = gitChangedFiles(cfg.root, o.changed === true ? null : o.changed);
-    // map repo-relative paths to be relative to the git top (impact globs are repo-relative)
-    opts.changed = files; opts.gitTop = top;
-  }
-  if (!opts.all && !opts.ids && !opts.tags && !opts.priorities && !opts.changed) opts.all = true;
-  const sel = select(cases, cfg, opts);
-  sel.mode = Object.entries({ all: opts.all, ids: opts.ids, tags: opts.tags, priority: opts.priorities, changed: opts.changed && `${opts.changed.length} file(s)` })
-    .filter(([, v]) => v && (!Array.isArray(v) || v.length)).map(([k, v]) => (v === true ? k : `${k}=${[].concat(v).join(',')}`)).join(' ');
-  sel.changedFiles = opts.changed;
-  return sel;
-}
-
 async function main(argv) {
   const o = parse(argv); const cmd = o._[0];
   if (!cmd || o.help || cmd === 'help') { console.log(HELP); return 0; }
   if (cmd === 'init') return init(o._[1] || o.project || '.');
+  if (cmd === 'mcp') { await require('./mcp').main(argv.slice(1)); return new Promise(() => {}); }
 
   const cfg = loadConfig(o.project);
   if (o.workers) cfg.workers = Number(o.workers);
@@ -96,7 +80,8 @@ async function main(argv) {
   }
   if (cmd !== 'select' && cmd !== 'run') { console.error(`Unknown command ${cmd}\n\n${HELP}`); return 2; }
 
-  const sel = buildSelection(cfg, cases, o);
+  const sel = build(cfg, cases, { all: !!o.all, ids: csv(o.ids), tags: csv(o.tags), priorities: csv(o.priority),
+    files: csv(o.files), changed: o.changed });
   if (cmd === 'select') {
     if (o.json) { console.log(JSON.stringify({ ...sel, selected: sel.selected.map((s) => ({ id: s.case.id, reasons: s.reasons })) }, null, 2)); return 0; }
     console.log(`Mode: ${sel.mode}`);
@@ -110,20 +95,11 @@ async function main(argv) {
 
   // run
   if (!sel.selected.length) { console.log('No cases selected - nothing to run.'); sel.notes.forEach((n) => console.log('NOTE: ' + n)); return 0; }
-  const outRoot = path.resolve(cfg.root, cfg.outDir);
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const runDir = path.join(outRoot, 'runs', ts); fs.mkdirSync(runDir, { recursive: true });
-  const lastFile = path.join(outRoot, 'last.json');
-  const previous = fs.existsSync(lastFile) ? JSON.parse(fs.readFileSync(lastFile, 'utf8')) : null;
   console.log(`Running ${sel.selected.length}/${cases.length} cases (${sel.mode}) against ${cfg.baseUrl}`);
   sel.notes.forEach((n) => console.log('NOTE: ' + n));
-  const startedAt = new Date().toISOString();
-  const results = await runAll(sel.selected, cfg, runDir, (r) =>
-    console.log(`  ${r.status === 'passed' ? (r.flaky ? 'FLAKY' : 'PASS ') : 'FAIL '} ${r.id.padEnd(12)} ${r.title} (${r.ms}ms${r.attempts > 1 ? `, ${r.attempts} attempts` : ''})${r.error ? '\n        ' + r.error.split('\n')[0] : ''}`));
-  results.sort((a, b) => a.id.localeCompare(b.id));
-  const meta = { project: cfg.name, startedAt, baseUrl: cfg.baseUrl, mode: sel.mode };
-  const data = writeReports(cfg, runDir, meta, results, previous);
-  fs.writeFileSync(lastFile, JSON.stringify({ meta, runDir, results: results.map(({ id, status }) => ({ id, status })) }));
+  const run = startRun(cfg, sel, { onResult: (r) =>
+    console.log(`  ${r.status === 'passed' ? (r.flaky ? 'FLAKY' : 'PASS ') : 'FAIL '} ${r.id.padEnd(12)} ${r.title} (${r.ms}ms${r.attempts > 1 ? `, ${r.attempts} attempts` : ''})${r.error ? '\n        ' + r.error.split('\n')[0] : ''}`) });
+  const data = await run.done; const runDir = run.runDir; const results = data.results;
   const s = data.summary; const reg = results.filter((r) => r.regression).map((r) => r.id);
   console.log(`\n${s.passed} passed, ${s.failed} failed, ${s.flaky} flaky of ${s.total} in ${(s.ms / 1000).toFixed(1)}s`);
   if (reg.length) console.log(`Regressions (passed last run, fail now): ${reg.join(', ')}`);

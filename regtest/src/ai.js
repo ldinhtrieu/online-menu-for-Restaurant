@@ -17,6 +17,7 @@ class AI {
 
   /** task: 'gen' | 'explain' (selects the model). Returns the text answer. */
   async ask(task, prompt, { system, useCache = false } = {}) {
+    if (this.ai.provider !== 'claude-cli') throw new Error('AI is disabled (ai.provider: none). Set ai.provider: claude-cli in regtest.config.yaml to use the claude CLI, or use the MCP server with your own AI client.');
     const model = (this.ai.models || {})[task] || this.ai.model;
     const key = crypto.createHash('sha256').update(JSON.stringify([model, system, prompt])).digest('hex');
     if (useCache && this.cache[key]) { this.usage.cached++; return this.cache[key]; }

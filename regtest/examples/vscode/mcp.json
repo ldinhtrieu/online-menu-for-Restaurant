@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "regtest": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/regtest/bin/regtest-mcp.js",
+        "--project", "${workspaceFolder}/qa"
+      ],
+      "env": {
+        "REGTEST_BASE_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
